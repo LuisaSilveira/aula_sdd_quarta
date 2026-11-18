@@ -1,0 +1,29 @@
+{
+  "listas_ativas": [
+    {
+      "id": "e1dd83f4-25e2-4986-ba19-794b805524e5",
+      "nome": "Churrasco",
+      "criada_em": "2026-11-18T17:47:05.490274+00:00",
+      "itens": [
+        {
+          "id": "77a7b7e0-365b-4544-bcf8-766885216403",
+          "nome": "Carne",
+          "comprado": false,
+          "quantidade": 1.0,
+          "unidade": "kg",
+          "preco_unitario": 50.0
+        },
+        {
+          "id": "bf86883d-7fbd-4f14-8978-de50caecd183",
+          "nome": "farofa",
+          "comprado": false,
+          "quantidade": 200.0,
+          "unidade": "g",
+          "preco_unitario": 5.0
+        }
+      ],
+      "mostrar_itens_comprados": true
+    }
+  ],
+  "historico": []
+}
