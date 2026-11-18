@@ -3,7 +3,9 @@ import json
 import pytest
 
 from app.regras_listas import (
+    ConfirmacaoArquivamentoPendente,
     ItemNaoEncontrado,
+    ListaArquivadaNaoEncontrada,
     NomeListaDuplicado,
     NomeListaInvalido,
     NomeItemInvalido,
@@ -25,7 +27,113 @@ from app.regras_listas import (
     remover_item,
     renomear_lista,
     salvar_estado,
+    arquivar_lista,
+    listar_historico,
+    buscar_lista_arquivada,
+    restaurar_lista,
+    excluir_lista_arquivada,
 )
+
+
+def test_ciclo_de_vida_arquivamento_consulta_restauracao_e_exclusao():
+    estado = estado_inicial()
+    lista = criar_lista(estado, "Feira", criada_em="2026-11-18T10:00:00Z")
+    comprado = adicionar_item(estado, lista["id"], "Tomate")
+    pendente = adicionar_item(estado, lista["id"], "Arroz")
+    editar_item(
+        estado,
+        lista["id"],
+        comprado["id"],
+        "Tomate cereja",
+        quantidade="1",
+        unidade="kg",
+        preco_unitario="8,50",
+    )
+    marcar_item_comprado(estado, lista["id"], comprado["id"])
+    ocultar_itens_comprados(estado, lista["id"])
+
+    estado_antes = json.loads(json.dumps(lista))
+    arquivada = arquivar_lista(
+        estado,
+        lista["id"],
+        confirmar_pendencias=True,
+        arquivada_em="2026-11-18T12:00:00Z",
+    )
+
+    assert estado["listas_ativas"] == []
+    assert arquivada["nome"] == "Feira"
+    assert [item["nome"] for item in arquivada["itens"]] == [
+        "Tomate cereja",
+        "Arroz",
+    ]
+    assert arquivada["mostrar_itens_comprados"] is False
+    assert [item["id"] for item in arquivada["itens"]] == [
+        comprado["id"],
+        pendente["id"],
+    ]
+    assert buscar_lista_arquivada(estado, lista["id"])["id"] == lista["id"]
+    assert [item["id"] for item in listar_historico(estado)] == [lista["id"]]
+
+    restaurada = restaurar_lista(estado, lista["id"])
+    assert [item["id"] for item in restaurada["itens"]] == [
+        comprado["id"],
+        pendente["id"],
+    ]
+    assert restaurada["mostrar_itens_comprados"] is False
+    assert estado["historico"] == []
+    assert restaurada["nome"] == estado_antes["nome"]
+    assert restaurada["itens"] == estado_antes["itens"]
+    assert restaurada["criada_em"] == estado_antes["criada_em"]
+
+    arquivar_lista(
+        estado,
+        lista["id"],
+        confirmar_pendencias=True,
+        arquivada_em="2026-11-18T13:00:00Z",
+    )
+    removida = excluir_lista_arquivada(estado, lista["id"], confirmar=True)
+    assert removida["id"] == lista["id"]
+    assert estado["historico"] == []
+
+
+def test_arquivamento_pendente_exige_confirmacao_e_historico_e_por_recencia():
+    estado = estado_inicial()
+    antiga = criar_lista(estado, "Antiga", criada_em="2026-11-18T09:00:00Z")
+    adicionar_item(estado, antiga["id"], "Pendente")
+
+    with pytest.raises(ConfirmacaoArquivamentoPendente, match="pendente"):
+        arquivar_lista(estado, antiga["id"])
+
+    arquivar_lista(
+        estado,
+        antiga["id"],
+        confirmar_pendencias=True,
+        arquivada_em="2026-11-18T10:00:00Z",
+    )
+    nova = criar_lista(estado, "Nova")
+    arquivar_lista(
+        estado,
+        nova["id"],
+        arquivada_em="2026-11-18T11:00:00Z",
+    )
+
+    assert [item["id"] for item in listar_historico(estado)] == [
+        nova["id"],
+        antiga["id"],
+    ]
+
+
+def test_restaura_lista_nao_arquivada_e_exclusao_permanente_exigem_confirmacao():
+    estado = estado_inicial()
+    lista = criar_lista(estado, "Mercado")
+    arquivar_lista(estado, lista["id"], arquivada_em="2026-11-18T12:00:00Z")
+
+    with pytest.raises(ListaArquivadaNaoEncontrada):
+        buscar_lista_arquivada(estado, "inexistente")
+    with pytest.raises(ValueError, match="confirmação"):
+        excluir_lista_arquivada(estado, lista["id"])
+    with pytest.raises(ListaArquivadaNaoEncontrada):
+        restaurar_lista(estado, "inexistente")
 
 
 def test_estado_inicial_nao_tem_listas():

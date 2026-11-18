@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ lista.nome }} — Histórico</title>
+  </head>
+  <body>
+    {% for mensagem in get_flashed_messages() %}
+      <p role="alert">{{ mensagem }}</p>
+    {% endfor %}
+
+    <main>
+      <p><a href="{{ url_for('pagina_inicial') }}">Voltar às listas</a></p>
+      <h1>{{ lista.nome }}</h1>
+      <p><strong>Somente leitura</strong></p>
+      <ul>
+        {% for item in lista.itens %}
+          <li class="{{ 'comprado' if item.comprado else 'pendente' }}">
+            {% if item.comprado %}
+              <del>{{ item.nome }}</del>
+            {% else %}
+              <span>{{ item.nome }}</span>
+            {% endif %}
+            {% if item.quantidade is not none %}
+              <span>— {{ item.quantidade }}{% if item.unidade %} {{ item.unidade }}{% endif %}</span>
+            {% elif item.unidade %}
+              <span>— {{ item.unidade }}</span>
+            {% endif %}
+            {% if item.preco_unitario is not none %}
+              <span>— R$ {{ item.preco_unitario|real }} por unidade</span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+      <p><strong>Total estimado:</strong> R$ {{ total|real }}</p>
+      <form action="{{ url_for('restaurar', lista_id=lista.id) }}" method="post">
+        <button type="submit">Restaurar</button>
+      </form>
+      <form action="{{ url_for('excluir_arquivada', lista_id=lista.id) }}" method="post"
+            onsubmit="return confirm('Excluir permanentemente esta lista arquivada? Esta ação não pode ser desfeita.');">
+        <input type="hidden" name="confirmar" value="sim">
+        <button type="submit">Excluir permanentemente</button>
+      </form>
+    </main>
+  </body>
+</html>

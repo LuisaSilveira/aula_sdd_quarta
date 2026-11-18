@@ -198,3 +198,80 @@ def test_precos_quantidades_unidades_e_total_estimado_por_interface(client):
         follow_redirects=True,
     )
     assert "Preço unitário não pode ser negativo" in preco_negativo.get_data(as_text=True)
+
+
+def test_arquivamento_historico_somente_leitura_restauracao_e_exclusao_por_interface(client):
+    client.post("/listas", data={"nome": "Feira"}, follow_redirects=True)
+    from app.regras_listas import carregar_estado
+
+    caminho = client.application.config["LISTAS_JSON"]
+    estado = carregar_estado(caminho)
+    lista_id = estado["listas_ativas"][0]["id"]
+    client.post(
+        f"/listas/{lista_id}/itens",
+        data={
+            "nome": "Tomate",
+            "quantidade": "1",
+            "unidade": "kg",
+            "preco_unitario": "8,50",
+        },
+        follow_redirects=True,
+    )
+    sem_confirmacao = client.post(
+        f"/listas/{lista_id}/arquivar",
+        follow_redirects=True,
+    )
+    assert "Nenhuma lista ativa" not in sem_confirmacao.get_data(as_text=True)
+    assert "Feira" in sem_confirmacao.get_data(as_text=True)
+
+    arquivada = client.post(
+        f"/listas/{lista_id}/arquivar",
+        data={"confirmar_pendencias": "sim"},
+        follow_redirects=True,
+    )
+    pagina = arquivada.get_data(as_text=True)
+    assert "Nenhuma lista ativa" in pagina
+    assert "Histórico" in pagina
+    assert "Feira" in pagina
+
+    historico = client.get(f"/historico/{lista_id}")
+    detalhe = historico.get_data(as_text=True)
+    assert historico.status_code == 200
+    assert "Feira" in detalhe
+    assert "Tomate" in detalhe
+    assert "Somente leitura" in detalhe
+    assert "/editar" not in detalhe
+
+    sem_confirmacao_delete = client.post(
+        f"/historico/{lista_id}/excluir",
+        follow_redirects=True,
+    )
+    assert "confirmação explícita" in sem_confirmacao_delete.get_data(as_text=True)
+
+    restaurada = client.post(
+        f"/historico/{lista_id}/restaurar",
+        follow_redirects=True,
+    )
+    texto_restaurada = restaurada.get_data(as_text=True)
+    assert "Lista restaurada" in texto_restaurada
+    assert "Feira" in texto_restaurada
+    assert "Tomate" in texto_restaurada
+    assert "Histórico" in texto_restaurada
+
+    estado = carregar_estado(caminho)
+    assert len(estado["historico"]) == 0
+    assert len(estado["listas_ativas"]) == 1
+
+    arquivada_novamente = client.post(
+        f"/listas/{lista_id}/arquivar",
+        data={"confirmar_pendencias": "sim"},
+        follow_redirects=True,
+    )
+    assert arquivada_novamente.status_code == 200
+
+    excluida = client.post(
+        f"/historico/{lista_id}/excluir",
+        data={"confirmar": "sim"},
+        follow_redirects=True,
+    )
+    assert "Lista arquivada excluída permanentemente" in excluida.get_data(as_text=True)

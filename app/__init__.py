@@ -3,7 +3,9 @@ from pathlib import Path
 from flask import Flask, flash, redirect, render_template, request, url_for
 
 from .regras_listas import (
+    ConfirmacaoArquivamentoPendente,
     ItemNaoEncontrado,
+    ListaArquivadaNaoEncontrada,
     ListaNaoEncontrada,
     NomeListaDuplicado,
     NomeListaInvalido,
@@ -26,6 +28,11 @@ from .regras_listas import (
     remover_item,
     renomear_lista,
     salvar_estado,
+    arquivar_lista,
+    listar_historico,
+    buscar_lista_arquivada,
+    restaurar_lista,
+    excluir_lista_arquivada,
 )
 
 
@@ -58,12 +65,35 @@ def create_app(config=None):
             lista["id"]: calcular_total_estimado(estado, lista["id"])
             for lista in estado["listas_ativas"]
         }
+        pendencias = {
+            lista["id"]: sum(
+                1 for item in lista["itens"] if not item.get("comprado", False)
+            )
+            for lista in estado["listas_ativas"]
+        }
         return render_template(
             "index.html",
             listas=listar_listas_ativas(estado),
+            historico=listar_historico(estado),
             totais=totais,
+            pendencias=pendencias,
             unidades=UNIDADES_PERMITIDAS,
         )
+
+    @application.get("/historico/<lista_id>")
+    def consultar_historico(lista_id):
+        estado = carregar()
+        try:
+            lista = buscar_lista_arquivada(estado, lista_id)
+            total = calcular_total_estimado(lista)
+            return render_template(
+                "historico.html",
+                lista=lista,
+                total=total,
+            )
+        except ListaArquivadaNaoEncontrada as erro:
+            flash(str(erro))
+            return redirect(url_for("pagina_inicial"))
 
     @application.post("/listas")
     @application.post("/criar-lista")
@@ -102,6 +132,55 @@ def create_app(config=None):
             persistir(estado)
             flash("Lista excluída.")
         except (ListaNaoEncontrada, OSError) as erro:
+            flash(str(erro))
+        return redirect(url_for("pagina_inicial"))
+
+    @application.post("/listas/<lista_id>/arquivar")
+    def arquivar(lista_id):
+        estado = carregar()
+        try:
+            confirmar = request.form.get("confirmar_pendencias") == "sim"
+            arquivar_lista(
+                estado,
+                lista_id,
+                confirmar_pendencias=confirmar,
+            )
+            persistir(estado)
+            flash("Lista arquivada.")
+        except (
+            ListaNaoEncontrada,
+            ConfirmacaoArquivamentoPendente,
+            OSError,
+        ) as erro:
+            flash(str(erro))
+        return redirect(url_for("pagina_inicial"))
+
+    @application.post("/historico/<lista_id>/restaurar")
+    def restaurar(lista_id):
+        estado = carregar()
+        try:
+            restaurar_lista(estado, lista_id)
+            persistir(estado)
+            flash("Lista restaurada.")
+        except (
+            ListaArquivadaNaoEncontrada,
+            NomeListaDuplicado,
+            OSError,
+        ) as erro:
+            flash(str(erro))
+        return redirect(url_for("pagina_inicial"))
+
+    @application.post("/historico/<lista_id>/excluir")
+    def excluir_arquivada(lista_id):
+        if request.form.get("confirmar") != "sim":
+            flash("confirmação explícita é necessária para excluir permanentemente.")
+            return redirect(url_for("pagina_inicial"))
+        estado = carregar()
+        try:
+            excluir_lista_arquivada(estado, lista_id, confirmar=True)
+            persistir(estado)
+            flash("Lista arquivada excluída permanentemente.")
+        except (ListaArquivadaNaoEncontrada, OSError) as erro:
             flash(str(erro))
         return redirect(url_for("pagina_inicial"))
 

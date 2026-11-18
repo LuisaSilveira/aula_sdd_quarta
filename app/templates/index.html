@@ -108,6 +108,15 @@
                 {% endfor %}
               </ul>
               <p><strong>Total estimado:</strong> R$ {{ totais[lista.id]|real }}</p>
+              <form action="{{ url_for('arquivar', lista_id=lista.id) }}" method="post"
+                    {% if pendencias[lista.id] > 0 %}
+                    onsubmit="return confirm('Esta lista possui {{ pendencias[lista.id] }} item(ns) pendente(s). Arquivar mesmo assim?');"
+                    {% endif %}>
+                {% if pendencias[lista.id] > 0 %}
+                  <input type="hidden" name="confirmar_pendencias" value="sim">
+                {% endif %}
+                <button type="submit">Arquivar</button>
+              </form>
               <form action="{{ url_for('excluir', lista_id=lista.id) }}" method="post"
                     onsubmit="return confirm('Excluir esta lista ativa?');">
                 <input type="hidden" name="confirmar" value="sim">
@@ -118,6 +127,28 @@
         </ul>
       {% else %}
         <p>Nenhuma lista ativa. Crie sua primeira lista.</p>
+      {% endif %}
+
+      <h1>Histórico</h1>
+      {% if historico %}
+        <ul>
+          {% for lista in historico %}
+            <li>
+              <strong>{{ lista.nome }}</strong>
+              <a href="{{ url_for('consultar_historico', lista_id=lista.id) }}">Abrir (somente leitura)</a>
+              <form action="{{ url_for('restaurar', lista_id=lista.id) }}" method="post">
+                <button type="submit">Restaurar</button>
+              </form>
+              <form action="{{ url_for('excluir_arquivada', lista_id=lista.id) }}" method="post"
+                    onsubmit="return confirm('Excluir permanentemente esta lista arquivada? Esta ação não pode ser desfeita.');">
+                <input type="hidden" name="confirmar" value="sim">
+                <button type="submit">Excluir permanentemente</button>
+              </form>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>Nenhum histórico.</p>
       {% endif %}
     </main>
   </body>

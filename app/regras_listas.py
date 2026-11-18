@@ -19,6 +19,14 @@ class ListaNaoEncontrada(KeyError):
     pass
 
 
+class ListaArquivadaNaoEncontrada(KeyError):
+    pass
+
+
+class ConfirmacaoArquivamentoPendente(ValueError):
+    pass
+
+
 class NomeItemInvalido(ValueError):
     pass
 
@@ -204,6 +212,76 @@ def excluir_lista(estado, lista_id):
     raise ListaNaoEncontrada("Lista ativa não encontrada.")
 
 
+def _buscar_lista_arquivada(estado, lista_id):
+    for lista in estado["historico"]:
+        lista.setdefault("itens", [])
+        lista.setdefault("mostrar_itens_comprados", True)
+        for item in lista["itens"]:
+            item.setdefault("quantidade", None)
+            item.setdefault("unidade", None)
+            item.setdefault("preco_unitario", None)
+        if lista["id"] == lista_id:
+            return lista
+    raise ListaArquivadaNaoEncontrada("Lista arquivada não encontrada.")
+
+
+def arquivar_lista(
+    estado,
+    lista_id,
+    confirmar_pendencias=False,
+    arquivada_em=None,
+):
+    lista = _buscar_lista_ativa(estado, lista_id)
+    tem_pendencias = any(not item.get("comprado", False) for item in lista["itens"])
+    if tem_pendencias and not confirmar_pendencias:
+        raise ConfirmacaoArquivamentoPendente(
+            "A lista possui itens pendentes. Confirme o arquivamento."
+        )
+
+    copia = deepcopy(lista)
+    copia["arquivada_em"] = arquivada_em or datetime.now(timezone.utc).isoformat()
+    estado["historico"].append(copia)
+    estado["listas_ativas"].remove(lista)
+    return copia
+
+
+def listar_historico(estado):
+    return sorted(
+        estado["historico"],
+        key=lambda lista: lista.get("arquivada_em", ""),
+        reverse=True,
+    )
+
+
+def buscar_lista_arquivada(estado, lista_id):
+    return _buscar_lista_arquivada(estado, lista_id)
+
+
+def restaurar_lista(estado, lista_id):
+    arquivada = _buscar_lista_arquivada(estado, lista_id)
+    nome_limpo = arquivada["nome"]
+    if _nome_ja_existe(estado, nome_limpo):
+        raise NomeListaDuplicado("Uma lista ativa já existe com esse nome.")
+
+    restaurada = deepcopy(arquivada)
+    restaurada.pop("arquivada_em", None)
+    for indice, lista in enumerate(estado["historico"]):
+        if lista["id"] == lista_id:
+            estado["historico"].pop(indice)
+            break
+    estado["listas_ativas"].append(restaurada)
+    return restaurada
+
+
+def excluir_lista_arquivada(estado, lista_id, confirmar=False):
+    if not confirmar:
+        raise ValueError("confirmação explícita é necessária para excluir permanentemente.")
+    for indice, lista in enumerate(estado["historico"]):
+        if lista["id"] == lista_id:
+            return estado["historico"].pop(indice)
+    raise ListaArquivadaNaoEncontrada("Lista arquivada não encontrada.")
+
+
 def adicionar_item(
     estado,
     lista_id,
@@ -360,6 +438,13 @@ def carregar_estado(caminho):
             item.setdefault("quantidade", None)
             item.setdefault("unidade", None)
             item.setdefault("preco_unitario", None)
+    for lista in estado["historico"]:
+        lista.setdefault("itens", [])
+        lista.setdefault("mostrar_itens_comprados", True)
+        for item in lista["itens"]:
+            item.setdefault("quantidade", None)
+            item.setdefault("unidade", None)
+            item.setdefault("preco_unitario", None)
     return estado
 
 
@@ -391,6 +476,35 @@ class GerenciadorListas:
 
     def excluir(self, lista_id):
         return excluir_lista(self.estado, lista_id)
+
+    def arquivar(
+        self,
+        lista_id,
+        confirmar_pendencias=False,
+        arquivada_em=None,
+    ):
+        return arquivar_lista(
+            self.estado,
+            lista_id,
+            confirmar_pendencias=confirmar_pendencias,
+            arquivada_em=arquivada_em,
+        )
+
+    def listar_historico(self):
+        return listar_historico(self.estado)
+
+    def buscar_arquivada(self, lista_id):
+        return buscar_lista_arquivada(self.estado, lista_id)
+
+    def restaurar(self, lista_id):
+        return restaurar_lista(self.estado, lista_id)
+
+    def excluir_arquivada(self, lista_id, confirmar=False):
+        return excluir_lista_arquivada(
+            self.estado,
+            lista_id,
+            confirmar=confirmar,
+        )
 
     def adicionar_item(
         self,
@@ -452,6 +566,11 @@ criar_lista_ativa = criar_lista
 listar_listas = listar_listas_ativas
 renomear_lista_ativa = renomear_lista
 excluir_lista_ativa = excluir_lista
+listar_listas_historico = listar_historico
+arquivar_lista_ativa = arquivar_lista
+buscar_lista_do_historico = buscar_lista_arquivada
+restaurar_lista_arquivada = restaurar_lista
+excluir_lista_do_historico = excluir_lista_arquivada
 ler_estado = carregar_estado
 persistir_estado = salvar_estado
 total_estimado = calcular_total_estimado
