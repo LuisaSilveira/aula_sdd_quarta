@@ -32,6 +32,17 @@
               <form action="{{ url_for('adicionar', lista_id=lista.id) }}" method="post">
                 <label for="item-{{ lista.id }}">Nome do item</label>
                 <input id="item-{{ lista.id }}" name="nome" type="text" required>
+                <label for="quantidade-novo-{{ lista.id }}">Quantidade</label>
+                <input id="quantidade-novo-{{ lista.id }}" name="quantidade" type="text" placeholder="Opcional">
+                <label for="unidade-novo-{{ lista.id }}">Unidade</label>
+                <select id="unidade-novo-{{ lista.id }}" name="unidade">
+                  <option value="">Sem unidade</option>
+                  {% for unidade_opcao in unidades %}
+                    <option value="{{ unidade_opcao }}">{{ unidade_opcao }}</option>
+                  {% endfor %}
+                </select>
+                <label for="preco-novo-{{ lista.id }}">Preço unitário em R$</label>
+                <input id="preco-novo-{{ lista.id }}" name="preco_unitario" type="text" placeholder="Opcional">
                 <button type="submit">Adicionar item</button>
               </form>
               {% if lista.mostrar_itens_comprados %}
@@ -52,9 +63,30 @@
                       {% else %}
                         <span>{{ item.nome }}</span>
                       {% endif %}
+                      {% if item.quantidade is not none %}
+                        <span>— {{ item.quantidade }}{% if item.unidade %} {{ item.unidade }}{% endif %}</span>
+                      {% elif item.unidade %}
+                        <span>— {{ item.unidade }}</span>
+                      {% endif %}
+                      {% if item.preco_unitario is not none %}
+                        <span>— R$ {{ item.preco_unitario|real }} por unidade</span>
+                      {% endif %}
                       <form action="{{ url_for('editar_item_interface', lista_id=lista.id, item_id=item.id) }}" method="post">
                         <label for="item-nome-{{ item.id }}">Editar item</label>
                         <input id="item-nome-{{ item.id }}" name="nome" type="text" value="{{ item.nome }}" required>
+                        <label for="item-quantidade-{{ item.id }}">Quantidade</label>
+                        <input id="item-quantidade-{{ item.id }}" name="quantidade" type="text"
+                               value="{{ item.quantidade if item.quantidade is not none else '' }}" placeholder="Opcional">
+                        <label for="item-unidade-{{ item.id }}">Unidade</label>
+                        <select id="item-unidade-{{ item.id }}" name="unidade">
+                          <option value="">Sem unidade</option>
+                          {% for unidade_opcao in unidades %}
+                            <option value="{{ unidade_opcao }}" {% if item.unidade == unidade_opcao %}selected{% endif %}>{{ unidade_opcao }}</option>
+                          {% endfor %}
+                        </select>
+                        <label for="item-preco-{{ item.id }}">Preço unitário em R$</label>
+                        <input id="item-preco-{{ item.id }}" name="preco_unitario" type="text"
+                               value="{{ item.preco_unitario if item.preco_unitario is not none else '' }}" placeholder="Opcional">
                         <button type="submit">Editar</button>
                       </form>
                       {% if item.comprado %}
@@ -75,6 +107,7 @@
                   {% endif %}
                 {% endfor %}
               </ul>
+              <p><strong>Total estimado:</strong> R$ {{ totais[lista.id]|real }}</p>
               <form action="{{ url_for('excluir', lista_id=lista.id) }}" method="post"
                     onsubmit="return confirm('Excluir esta lista ativa?');">
                 <input type="hidden" name="confirmar" value="sim">

@@ -8,9 +8,14 @@ from .regras_listas import (
     NomeListaDuplicado,
     NomeListaInvalido,
     NomeItemInvalido,
+    QuantidadeInvalida,
+    UnidadeInvalida,
+    PrecoInvalido,
+    UNIDADES_PERMITIDAS,
     adicionar_item,
     carregar_estado,
     criar_lista,
+    calcular_total_estimado,
     desmarcar_item_comprado,
     editar_item,
     excluir_lista,
@@ -34,6 +39,12 @@ def create_app(config=None):
         application.config.update(config)
     caminho_json = application.config["LISTAS_JSON"]
 
+    @application.template_filter("real")
+    def formatar_real(valor):
+        if valor is None:
+            return ""
+        return f"{float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
     def carregar():
         return carregar_estado(caminho_json)
 
@@ -43,9 +54,15 @@ def create_app(config=None):
     @application.get("/")
     def pagina_inicial():
         estado = carregar()
+        totais = {
+            lista["id"]: calcular_total_estimado(estado, lista["id"])
+            for lista in estado["listas_ativas"]
+        }
         return render_template(
             "index.html",
             listas=listar_listas_ativas(estado),
+            totais=totais,
+            unidades=UNIDADES_PERMITIDAS,
         )
 
     @application.post("/listas")
@@ -92,10 +109,24 @@ def create_app(config=None):
     def adicionar(lista_id):
         estado = carregar()
         try:
-            adicionar_item(estado, lista_id, request.form.get("nome", ""))
+            adicionar_item(
+                estado,
+                lista_id,
+                request.form.get("nome", ""),
+                quantidade=request.form.get("quantidade", ""),
+                unidade=request.form.get("unidade", ""),
+                preco_unitario=request.form.get("preco_unitario", ""),
+            )
             persistir(estado)
             flash("Item adicionado.")
-        except (ListaNaoEncontrada, NomeItemInvalido, OSError) as erro:
+        except (
+            ListaNaoEncontrada,
+            NomeItemInvalido,
+            QuantidadeInvalida,
+            UnidadeInvalida,
+            PrecoInvalido,
+            OSError,
+        ) as erro:
             flash(str(erro))
         return redirect(url_for("pagina_inicial"))
 
@@ -103,10 +134,31 @@ def create_app(config=None):
     def editar_item_interface(lista_id, item_id):
         estado = carregar()
         try:
-            editar_item(estado, lista_id, item_id, request.form.get("nome", ""))
+            argumentos = {}
+            if "quantidade" in request.form:
+                argumentos["quantidade"] = request.form.get("quantidade", "")
+            if "unidade" in request.form:
+                argumentos["unidade"] = request.form.get("unidade", "")
+            if "preco_unitario" in request.form:
+                argumentos["preco_unitario"] = request.form.get("preco_unitario", "")
+            editar_item(
+                estado,
+                lista_id,
+                item_id,
+                request.form.get("nome", ""),
+                **argumentos,
+            )
             persistir(estado)
             flash("Item editado.")
-        except (ListaNaoEncontrada, ItemNaoEncontrado, NomeItemInvalido, OSError) as erro:
+        except (
+            ListaNaoEncontrada,
+            ItemNaoEncontrado,
+            NomeItemInvalido,
+            QuantidadeInvalida,
+            UnidadeInvalida,
+            PrecoInvalido,
+            OSError,
+        ) as erro:
             flash(str(erro))
         return redirect(url_for("pagina_inicial"))
 

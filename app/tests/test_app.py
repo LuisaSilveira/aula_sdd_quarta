@@ -126,3 +126,75 @@ def test_adicionar_editar_marcar_ocultar_e_remover_itens_por_interface(client):
         follow_redirects=True,
     )
     assert "Tomate cereja" not in removida.get_data(as_text=True)
+
+
+def test_precos_quantidades_unidades_e_total_estimado_por_interface(client):
+    client.post("/listas", data={"nome": "Mercado"}, follow_redirects=True)
+    from app.regras_listas import carregar_estado
+
+    caminho = client.application.config["LISTAS_JSON"]
+    estado = carregar_estado(caminho)
+    lista_id = estado["listas_ativas"][0]["id"]
+
+    client.post(
+        f"/listas/{lista_id}/itens",
+        data={"nome": "Arroz"},
+        follow_redirects=True,
+    )
+    client.post(
+        f"/listas/{lista_id}/itens",
+        data={"nome": "Leite"},
+        follow_redirects=True,
+    )
+    estado = carregar_estado(caminho)
+    arroz, leite = estado["listas_ativas"][0]["itens"]
+
+    editada = client.post(
+        f"/listas/{lista_id}/itens/{arroz['id']}/editar",
+        data={
+            "nome": "Arroz",
+            "quantidade": "1,5",
+            "unidade": "kg",
+            "preco_unitario": "12,50",
+        },
+        follow_redirects=True,
+    )
+    assert "R$" in editada.get_data(as_text=True)
+    assert "Total estimado" in editada.get_data(as_text=True)
+
+    leite_editado = client.post(
+        f"/listas/{lista_id}/itens/{leite['id']}/editar",
+        data={
+            "nome": "Leite",
+            "quantidade": "",
+            "unidade": "litro",
+            "preco_unitario": "4",
+        },
+        follow_redirects=True,
+    )
+    pagina = leite_editado.get_data(as_text=True)
+    assert "R$ 22,75" in pagina
+
+    invalidada = client.post(
+        f"/listas/{lista_id}/itens/{arroz['id']}/editar",
+        data={
+            "nome": "Arroz",
+            "quantidade": "-1",
+            "unidade": "kg",
+            "preco_unitario": "12,50",
+        },
+        follow_redirects=True,
+    )
+    assert "Quantidade deve ser maior que zero" in invalidada.get_data(as_text=True)
+
+    preco_negativo = client.post(
+        f"/listas/{lista_id}/itens/{arroz['id']}/editar",
+        data={
+            "nome": "Arroz",
+            "quantidade": "1",
+            "unidade": "kg",
+            "preco_unitario": "-1",
+        },
+        follow_redirects=True,
+    )
+    assert "Preço unitário não pode ser negativo" in preco_negativo.get_data(as_text=True)

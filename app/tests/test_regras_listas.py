@@ -7,12 +7,16 @@ from app.regras_listas import (
     NomeListaDuplicado,
     NomeListaInvalido,
     NomeItemInvalido,
+    QuantidadeInvalida,
+    UnidadeInvalida,
+    PrecoInvalido,
     adicionar_item,
     criar_lista,
     excluir_lista,
     estado_inicial,
     editar_item,
     listar_listas_ativas,
+    calcular_total_estimado,
     carregar_estado,
     marcar_item_comprado,
     desmarcar_item_comprado,
@@ -144,3 +148,101 @@ def test_ocultar_mostrar_remover_e_persistir_itens(tmp_path):
 
     salvar_estado(caminho, estado)
     assert carregar_estado(caminho) == estado
+
+
+def test_quantidade_decimal_unidade_preco_e_edicao_do_item():
+    estado = estado_inicial()
+    lista = criar_lista(estado, "Churrasco")
+    item = adicionar_item(estado, lista["id"], "Picanha")
+
+    editar_item(
+        estado,
+        lista["id"],
+        item["id"],
+        "Picanha maturada",
+        quantidade="1,5",
+        unidade="kg",
+        preco_unitario="49,90",
+    )
+
+    assert item["nome"] == "Picanha maturada"
+    assert item["quantidade"] == 1.5
+    assert item["unidade"] == "kg"
+    assert item["preco_unitario"] == 49.90
+
+
+@pytest.mark.parametrize("quantidade", ["0", "-1", "0,0", "-0,5"])
+def test_quantidade_zero_ou_negativa_e_rejeitada(quantidade):
+    estado = estado_inicial()
+    lista = criar_lista(estado, "Mercado")
+    item = adicionar_item(estado, lista["id"], "Arroz")
+
+    with pytest.raises(QuantidadeInvalida, match="Quantidade"):
+        editar_item(
+            estado,
+            lista["id"],
+            item["id"],
+            "Arroz",
+            quantidade=quantidade,
+        )
+
+
+def test_unidade_opcional_e_preco_zero_valido_preco_negativo_invalido():
+    estado = estado_inicial()
+    lista = criar_lista(estado, "Mercado")
+    item = adicionar_item(estado, lista["id"], "Brinde")
+
+    editar_item(
+        estado,
+        lista["id"],
+        item["id"],
+        "Brinde",
+        unidade="",
+        preco_unitario="0",
+    )
+    assert item["unidade"] is None
+    assert item["preco_unitario"] == 0
+
+    with pytest.raises(UnidadeInvalida, match="Unidade"):
+        editar_item(
+            estado,
+            lista["id"],
+            item["id"],
+            "Brinde",
+            unidade="saco",
+        )
+
+    with pytest.raises(PrecoInvalido, match="Preço"):
+        editar_item(
+            estado,
+            lista["id"],
+            item["id"],
+            "Brinde",
+            preco_unitario="-0,01",
+        )
+
+
+def test_total_estimado_precos_sem_dados_suficientes_e_quantidade_implicita():
+    estado = estado_inicial()
+    lista = criar_lista(estado, "Semanal")
+    arroz = adicionar_item(estado, lista["id"], "Arroz")
+    leite = adicionar_item(estado, lista["id"], "Leite")
+    cafe = adicionar_item(estado, lista["id"], "Café")
+
+    editar_item(
+        estado, lista["id"], arroz["id"], "Arroz",
+        quantidade="2", preco_unitario="12,50",
+    )
+    editar_item(
+        estado, lista["id"], leite["id"], "Leite",
+        preco_unitario="4",
+    )
+
+    assert leite["quantidade"] is None
+    assert calcular_total_estimado(estado, lista["id"]) == 29.0
+
+    editar_item(
+        estado, lista["id"], cafe["id"], "Café",
+        quantidade="1",
+    )
+    assert calcular_total_estimado(estado, lista["id"]) == 29.0
