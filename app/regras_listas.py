@@ -47,6 +47,14 @@ class PrecoInvalido(ValueError):
     pass
 
 
+class FalhaLeituraPersistencia(OSError):
+    """Indica que o estado não pôde ser lido com segurança."""
+
+
+class FalhaEscritaPersistencia(OSError):
+    """Indica que uma alteração não pôde ser persistida."""
+
+
 UNIDADES_PERMITIDAS = (
     "unidade",
     "kg",
@@ -425,10 +433,19 @@ def calcular_total_estimado(estado, lista_id=None):
 
 def carregar_estado(caminho):
     caminho = Path(caminho)
-    if not caminho.exists():
-        return estado_inicial()
-    with caminho.open("r", encoding="utf-8") as arquivo:
-        estado = json.load(arquivo)
+    try:
+        if not caminho.exists():
+            return estado_inicial()
+        with caminho.open("r", encoding="utf-8") as arquivo:
+            estado = json.load(arquivo)
+    except json.JSONDecodeError as erro:
+        raise FalhaLeituraPersistencia(
+            "não foi possível ler as listas persistidas: o arquivo está inválido."
+        ) from erro
+    except (OSError, UnicodeDecodeError) as erro:
+        raise FalhaLeituraPersistencia(
+            "não foi possível ler as listas persistidas."
+        ) from erro
     estado.setdefault("listas_ativas", [])
     estado.setdefault("historico", [])
     for lista in estado["listas_ativas"]:
@@ -450,32 +467,75 @@ def carregar_estado(caminho):
 
 def salvar_estado(caminho, estado):
     caminho = Path(caminho)
-    caminho.parent.mkdir(parents=True, exist_ok=True)
-    temporario = caminho.with_name(caminho.name + ".tmp")
-    with temporario.open("w", encoding="utf-8") as arquivo:
-        json.dump(deepcopy(estado), arquivo, ensure_ascii=False, indent=2)
-        arquivo.flush()
-        os.fsync(arquivo.fileno())
-    os.replace(temporario, caminho)
+    try:
+        caminho.parent.mkdir(parents=True, exist_ok=True)
+        temporario = caminho.with_name(caminho.name + ".tmp")
+        with temporario.open("w", encoding="utf-8") as arquivo:
+            json.dump(deepcopy(estado), arquivo, ensure_ascii=False, indent=2)
+            arquivo.flush()
+            os.fsync(arquivo.fileno())
+        os.replace(temporario, caminho)
+    except (OSError, TypeError, ValueError) as erro:
+        raise FalhaEscritaPersistencia(
+            "não foi possível salvar a alteração; ela não foi persistida."
+        ) from erro
 
 
 class GerenciadorListas:
     """API pública simples das regras das listas."""
 
-    def __init__(self, estado=None):
-        self.estado = estado if estado is not None else estado_inicial()
+    def __init__(self, estado=None, caminho=None):
+        self.caminho = Path(caminho) if caminho is not None else None
+        if estado is not None:
+            self.estado = estado
+        elif self.caminho is not None:
+            self.estado = carregar_estado(self.caminho)
+        else:
+            self.estado = estado_inicial()
+
+    def recarregar(self):
+        if self.caminho is None:
+            raise FalhaLeituraPersistencia(
+                "Não foi possível ler: nenhum arquivo de persistência foi configurado."
+            )
+        self.estado = carregar_estado(self.caminho)
+        return self.estado
+
+    def persistir(self):
+        if self.caminho is None:
+            raise FalhaEscritaPersistencia(
+                "Não foi possível salvar: nenhum arquivo de persistência foi configurado."
+            )
+        salvar_estado(self.caminho, self.estado)
+        return self.estado
+
+    def _executar(self, operacao):
+        if self.caminho is None:
+            return operacao(self.estado)
+
+        candidato = deepcopy(self.estado)
+        resultado = operacao(candidato)
+        salvar_estado(self.caminho, candidato)
+        self.estado = candidato
+        return resultado
 
     def listar_ativas(self):
         return listar_listas_ativas(self.estado)
 
     def criar(self, nome, criada_em=None):
-        return criar_lista(self.estado, nome, criada_em=criada_em)
+        return self._executar(
+            lambda estado: criar_lista(estado, nome, criada_em=criada_em)
+        )
 
     def renomear(self, lista_id, nome):
-        return renomear_lista(self.estado, lista_id, nome)
+        return self._executar(
+            lambda estado: renomear_lista(estado, lista_id, nome)
+        )
 
     def excluir(self, lista_id):
-        return excluir_lista(self.estado, lista_id)
+        return self._executar(
+            lambda estado: excluir_lista(estado, lista_id)
+        )
 
     def arquivar(
         self,
@@ -483,11 +543,13 @@ class GerenciadorListas:
         confirmar_pendencias=False,
         arquivada_em=None,
     ):
-        return arquivar_lista(
-            self.estado,
-            lista_id,
-            confirmar_pendencias=confirmar_pendencias,
-            arquivada_em=arquivada_em,
+        return self._executar(
+            lambda estado: arquivar_lista(
+                estado,
+                lista_id,
+                confirmar_pendencias=confirmar_pendencias,
+                arquivada_em=arquivada_em,
+            )
         )
 
     def listar_historico(self):
@@ -497,13 +559,17 @@ class GerenciadorListas:
         return buscar_lista_arquivada(self.estado, lista_id)
 
     def restaurar(self, lista_id):
-        return restaurar_lista(self.estado, lista_id)
+        return self._executar(
+            lambda estado: restaurar_lista(estado, lista_id)
+        )
 
     def excluir_arquivada(self, lista_id, confirmar=False):
-        return excluir_lista_arquivada(
-            self.estado,
-            lista_id,
-            confirmar=confirmar,
+        return self._executar(
+            lambda estado: excluir_lista_arquivada(
+                estado,
+                lista_id,
+                confirmar=confirmar,
+            )
         )
 
     def adicionar_item(
@@ -514,13 +580,15 @@ class GerenciadorListas:
         unidade=_NAO_INFORMADO,
         preco_unitario=_NAO_INFORMADO,
     ):
-        return adicionar_item(
-            self.estado,
-            lista_id,
-            nome,
-            quantidade=quantidade,
-            unidade=unidade,
-            preco_unitario=preco_unitario,
+        return self._executar(
+            lambda estado: adicionar_item(
+                estado,
+                lista_id,
+                nome,
+                quantidade=quantidade,
+                unidade=unidade,
+                preco_unitario=preco_unitario,
+            )
         )
 
     def editar_item(
@@ -532,30 +600,42 @@ class GerenciadorListas:
         unidade=_NAO_INFORMADO,
         preco_unitario=_NAO_INFORMADO,
     ):
-        return editar_item(
-            self.estado,
-            lista_id,
-            item_id,
-            nome,
-            quantidade=quantidade,
-            unidade=unidade,
-            preco_unitario=preco_unitario,
+        return self._executar(
+            lambda estado: editar_item(
+                estado,
+                lista_id,
+                item_id,
+                nome,
+                quantidade=quantidade,
+                unidade=unidade,
+                preco_unitario=preco_unitario,
+            )
         )
 
     def marcar_comprado(self, lista_id, item_id):
-        return marcar_item_comprado(self.estado, lista_id, item_id)
+        return self._executar(
+            lambda estado: marcar_item_comprado(estado, lista_id, item_id)
+        )
 
     def desmarcar_comprado(self, lista_id, item_id):
-        return desmarcar_item_comprado(self.estado, lista_id, item_id)
+        return self._executar(
+            lambda estado: desmarcar_item_comprado(estado, lista_id, item_id)
+        )
 
     def ocultar_comprados(self, lista_id):
-        return ocultar_itens_comprados(self.estado, lista_id)
+        return self._executar(
+            lambda estado: ocultar_itens_comprados(estado, lista_id)
+        )
 
     def mostrar_comprados(self, lista_id):
-        return mostrar_itens_comprados(self.estado, lista_id)
+        return self._executar(
+            lambda estado: mostrar_itens_comprados(estado, lista_id)
+        )
 
     def remover_item(self, lista_id, item_id):
-        return remover_item(self.estado, lista_id, item_id)
+        return self._executar(
+            lambda estado: remover_item(estado, lista_id, item_id)
+        )
 
     def calcular_total_estimado(self, lista_id):
         return calcular_total_estimado(self.estado, lista_id)

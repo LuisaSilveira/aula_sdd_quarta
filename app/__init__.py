@@ -1,4 +1,6 @@
+import json
 from pathlib import Path
+from copy import deepcopy
 
 from flask import Flask, flash, redirect, render_template, request, url_for
 
@@ -13,6 +15,8 @@ from .regras_listas import (
     QuantidadeInvalida,
     UnidadeInvalida,
     PrecoInvalido,
+    FalhaLeituraPersistencia,
+    FalhaEscritaPersistencia,
     UNIDADES_PERMITIDAS,
     adicionar_item,
     carregar_estado,
@@ -45,6 +49,8 @@ def create_app(config=None):
     if config:
         application.config.update(config)
     caminho_json = application.config["LISTAS_JSON"]
+    ultimo_estado = {"valor": None}
+    erro_leitura = {"valor": False}
 
     @application.template_filter("real")
     def formatar_real(valor):
@@ -53,10 +59,27 @@ def create_app(config=None):
         return f"{float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     def carregar():
-        return carregar_estado(caminho_json)
+        try:
+            estado = carregar_estado(caminho_json)
+            ultimo_estado["valor"] = deepcopy(estado)
+            erro_leitura["valor"] = False
+            return deepcopy(estado)
+        except (FalhaLeituraPersistencia, OSError, json.JSONDecodeError) as erro:
+            flash(str(erro), "erro")
+            erro_leitura["valor"] = True
+            if ultimo_estado["valor"] is None:
+                return {"listas_ativas": [], "historico": []}
+            return deepcopy(ultimo_estado["valor"])
 
     def persistir(estado):
         salvar_estado(caminho_json, estado)
+        ultimo_estado["valor"] = deepcopy(estado)
+
+    def sucesso(mensagem):
+        flash(mensagem, "sucesso")
+
+    def mensagem_erro(mensagem):
+        flash(str(mensagem), "erro")
 
     @application.get("/")
     def pagina_inicial():
@@ -78,6 +101,7 @@ def create_app(config=None):
             totais=totais,
             pendencias=pendencias,
             unidades=UNIDADES_PERMITIDAS,
+            erro_leitura=erro_leitura["valor"],
         )
 
     @application.get("/historico/<lista_id>")
@@ -92,7 +116,7 @@ def create_app(config=None):
                 total=total,
             )
         except ListaArquivadaNaoEncontrada as erro:
-            flash(str(erro))
+            mensagem_erro(str(erro))
             return redirect(url_for("pagina_inicial"))
 
     @application.post("/listas")
@@ -102,9 +126,9 @@ def create_app(config=None):
         try:
             criar_lista(estado, request.form.get("nome", ""))
             persistir(estado)
-            flash("Lista criada.")
+            sucesso("Lista criada.")
         except (NomeListaInvalido, NomeListaDuplicado, OSError) as erro:
-            flash(str(erro))
+            mensagem_erro(str(erro))
         return redirect(url_for("pagina_inicial"))
 
     @application.post("/listas/<lista_id>/renomear")
@@ -114,25 +138,25 @@ def create_app(config=None):
         try:
             renomear_lista(estado, lista_id, request.form.get("nome", ""))
             persistir(estado)
-            flash("Lista renomeada.")
+            sucesso("Lista renomeada.")
         except (ListaNaoEncontrada, NomeListaInvalido, NomeListaDuplicado, OSError) as erro:
-            flash(str(erro))
+            mensagem_erro(str(erro))
         return redirect(url_for("pagina_inicial"))
 
     @application.post("/listas/<lista_id>/excluir")
     @application.post("/excluir/<lista_id>")
     def excluir(lista_id):
         if request.form.get("confirmar") != "sim":
-            flash("Confirmação explícita é necessária para excluir a lista.")
+            mensagem_erro("Confirmação explícita é necessária para excluir a lista.")
             return redirect(url_for("pagina_inicial"))
 
         estado = carregar()
         try:
             excluir_lista(estado, lista_id)
             persistir(estado)
-            flash("Lista excluída.")
+            sucesso("Lista excluída.")
         except (ListaNaoEncontrada, OSError) as erro:
-            flash(str(erro))
+            mensagem_erro(str(erro))
         return redirect(url_for("pagina_inicial"))
 
     @application.post("/listas/<lista_id>/arquivar")
@@ -146,13 +170,13 @@ def create_app(config=None):
                 confirmar_pendencias=confirmar,
             )
             persistir(estado)
-            flash("Lista arquivada.")
+            sucesso("Lista arquivada.")
         except (
             ListaNaoEncontrada,
             ConfirmacaoArquivamentoPendente,
             OSError,
         ) as erro:
-            flash(str(erro))
+            mensagem_erro(str(erro))
         return redirect(url_for("pagina_inicial"))
 
     @application.post("/historico/<lista_id>/restaurar")
@@ -161,27 +185,27 @@ def create_app(config=None):
         try:
             restaurar_lista(estado, lista_id)
             persistir(estado)
-            flash("Lista restaurada.")
+            sucesso("Lista restaurada.")
         except (
             ListaArquivadaNaoEncontrada,
             NomeListaDuplicado,
             OSError,
         ) as erro:
-            flash(str(erro))
+            mensagem_erro(str(erro))
         return redirect(url_for("pagina_inicial"))
 
     @application.post("/historico/<lista_id>/excluir")
     def excluir_arquivada(lista_id):
         if request.form.get("confirmar") != "sim":
-            flash("confirmação explícita é necessária para excluir permanentemente.")
+            mensagem_erro("confirmação explícita é necessária para excluir permanentemente.")
             return redirect(url_for("pagina_inicial"))
         estado = carregar()
         try:
             excluir_lista_arquivada(estado, lista_id, confirmar=True)
             persistir(estado)
-            flash("Lista arquivada excluída permanentemente.")
+            sucesso("Lista arquivada excluída permanentemente.")
         except (ListaArquivadaNaoEncontrada, OSError) as erro:
-            flash(str(erro))
+            mensagem_erro(str(erro))
         return redirect(url_for("pagina_inicial"))
 
     @application.post("/listas/<lista_id>/itens")
@@ -197,7 +221,7 @@ def create_app(config=None):
                 preco_unitario=request.form.get("preco_unitario", ""),
             )
             persistir(estado)
-            flash("Item adicionado.")
+            sucesso("Item adicionado.")
         except (
             ListaNaoEncontrada,
             NomeItemInvalido,
@@ -206,7 +230,7 @@ def create_app(config=None):
             PrecoInvalido,
             OSError,
         ) as erro:
-            flash(str(erro))
+            mensagem_erro(str(erro))
         return redirect(url_for("pagina_inicial"))
 
     @application.post("/listas/<lista_id>/itens/<item_id>/editar")
@@ -228,7 +252,7 @@ def create_app(config=None):
                 **argumentos,
             )
             persistir(estado)
-            flash("Item editado.")
+            sucesso("Item editado.")
         except (
             ListaNaoEncontrada,
             ItemNaoEncontrado,
@@ -238,7 +262,7 @@ def create_app(config=None):
             PrecoInvalido,
             OSError,
         ) as erro:
-            flash(str(erro))
+            mensagem_erro(str(erro))
         return redirect(url_for("pagina_inicial"))
 
     @application.post("/listas/<lista_id>/itens/<item_id>/comprado")
@@ -247,9 +271,9 @@ def create_app(config=None):
         try:
             marcar_item_comprado(estado, lista_id, item_id)
             persistir(estado)
-            flash("Item marcado como comprado.")
+            sucesso("Item marcado como comprado.")
         except (ListaNaoEncontrada, ItemNaoEncontrado, OSError) as erro:
-            flash(str(erro))
+            mensagem_erro(str(erro))
         return redirect(url_for("pagina_inicial"))
 
     @application.post("/listas/<lista_id>/itens/<item_id>/pendente")
@@ -258,9 +282,9 @@ def create_app(config=None):
         try:
             desmarcar_item_comprado(estado, lista_id, item_id)
             persistir(estado)
-            flash("Item desmarcado como comprado.")
+            sucesso("Item desmarcado como comprado.")
         except (ListaNaoEncontrada, ItemNaoEncontrado, OSError) as erro:
-            flash(str(erro))
+            mensagem_erro(str(erro))
         return redirect(url_for("pagina_inicial"))
 
     @application.post("/listas/<lista_id>/comprados/ocultar")
@@ -269,9 +293,9 @@ def create_app(config=None):
         try:
             ocultar_itens_comprados(estado, lista_id)
             persistir(estado)
-            flash("Itens comprados ocultados.")
+            sucesso("Itens comprados ocultados.")
         except (ListaNaoEncontrada, OSError) as erro:
-            flash(str(erro))
+            mensagem_erro(str(erro))
         return redirect(url_for("pagina_inicial"))
 
     @application.post("/listas/<lista_id>/comprados/mostrar")
@@ -280,24 +304,24 @@ def create_app(config=None):
         try:
             mostrar_itens_comprados(estado, lista_id)
             persistir(estado)
-            flash("Itens comprados mostrados.")
+            sucesso("Itens comprados mostrados.")
         except (ListaNaoEncontrada, OSError) as erro:
-            flash(str(erro))
+            mensagem_erro(str(erro))
         return redirect(url_for("pagina_inicial"))
 
     @application.post("/listas/<lista_id>/itens/<item_id>/remover")
     def remover(lista_id, item_id):
         if request.form.get("confirmar") != "sim":
-            flash("Confirmação explícita é necessária para remover o item.")
+            mensagem_erro("Confirmação explícita é necessária para remover o item.")
             return redirect(url_for("pagina_inicial"))
 
         estado = carregar()
         try:
             remover_item(estado, lista_id, item_id)
             persistir(estado)
-            flash("Item removido.")
+            sucesso("Item removido.")
         except (ListaNaoEncontrada, ItemNaoEncontrado, OSError) as erro:
-            flash(str(erro))
+            mensagem_erro(str(erro))
         return redirect(url_for("pagina_inicial"))
 
     return application

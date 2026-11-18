@@ -4,10 +4,22 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ lista.nome }} — Histórico</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, sans-serif; background: #f7f7f5; color: #202124; }
+      main { width: min(100%, 760px); margin: 0 auto; padding: 16px; }
+      form { display: grid; gap: 8px; margin: 8px 0; }
+      button { min-height: 44px; border: 1px solid #555; border-radius: 8px; padding: 8px 12px; }
+      ul { list-style: none; padding: 0; }
+      li { border-bottom: 1px solid #ddd; padding: 12px 0; }
+      .flash { padding: 12px; border-radius: 8px; }
+      .sucesso { background: #e7f6ed; border: 1px solid #2d7a4d; }
+      .erro { background: #fdeceb; border: 1px solid #b42318; }
+    </style>
   </head>
   <body>
-    {% for mensagem in get_flashed_messages() %}
-      <p role="alert">{{ mensagem }}</p>
+    {% for categoria, mensagem in get_flashed_messages(with_categories=true) %}
+      <p class="flash {{ categoria }}" role="{{ 'status' if categoria == 'sucesso' else 'alert' }}">{{ mensagem }}</p>
     {% endfor %}
 
     <main>

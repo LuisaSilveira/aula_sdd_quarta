@@ -32,6 +32,9 @@ from app.regras_listas import (
     buscar_lista_arquivada,
     restaurar_lista,
     excluir_lista_arquivada,
+    FalhaLeituraPersistencia,
+    FalhaEscritaPersistencia,
+    GerenciadorListas,
 )
 
 
@@ -354,3 +357,51 @@ def test_total_estimado_precos_sem_dados_suficientes_e_quantidade_implicita():
         quantidade="1",
     )
     assert calcular_total_estimado(estado, lista["id"]) == 29.0
+
+
+def test_gerenciador_preserva_estado_quando_escrita_falha(tmp_path, monkeypatch):
+    caminho = tmp_path / "listas.json"
+    gerenciador = GerenciadorListas(caminho=caminho)
+    anterior = json.loads(json.dumps(gerenciador.estado))
+
+    def falhar_escrita(*args, **kwargs):
+        raise FalhaEscritaPersistencia("não foi possível salvar.")
+
+    monkeypatch.setattr(
+        "app.regras_listas.salvar_estado",
+        falhar_escrita,
+    )
+
+    with pytest.raises(FalhaEscritaPersistencia, match="não foi possível salvar"):
+        gerenciador.criar("Feira")
+
+    assert gerenciador.estado == anterior
+    assert not caminho.exists()
+
+
+def test_erro_de_leitura_tem_mensagem_explicitamente_categorizada(tmp_path):
+    caminho = tmp_path / "listas.json"
+    caminho.write_text("{json inválido", encoding="utf-8")
+
+    with pytest.raises(FalhaLeituraPersistencia, match="não foi possível ler"):
+        GerenciadorListas(caminho=caminho)
+
+
+def test_listas_ativas_e_historico_sao_separados_e_ordenados_por_recencia():
+    estado = estado_inicial()
+    antiga = criar_lista(estado, "Antiga", criada_em="2026-11-18T09:00:00Z")
+    nova = criar_lista(estado, "Nova", criada_em="2026-11-18T10:00:00Z")
+
+    arquivar_lista(
+        estado,
+        antiga["id"],
+        arquivada_em="2026-11-18T11:00:00Z",
+    )
+    arquivar_lista(
+        estado,
+        nova["id"],
+        arquivada_em="2026-11-18T12:00:00Z",
+    )
+
+    assert estado["listas_ativas"] == []
+    assert [lista["nome"] for lista in listar_historico(estado)] == ["Nova", "Antiga"]

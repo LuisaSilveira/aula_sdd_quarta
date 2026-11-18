@@ -275,3 +275,39 @@ def test_arquivamento_historico_somente_leitura_restauracao_e_exclusao_por_inter
         follow_redirects=True,
     )
     assert "Lista arquivada excluída permanentemente" in excluida.get_data(as_text=True)
+
+
+def test_falha_de_escrita_nao_exibe_confirmacao_e_preserva_json(client, monkeypatch):
+    criada = client.post("/listas", data={"nome": "Mercado"}, follow_redirects=True)
+    assert criada.status_code == 200
+
+    caminho = client.application.config["LISTAS_JSON"]
+    from app.regras_listas import carregar_estado, FalhaEscritaPersistencia
+
+    estado_anterior = carregar_estado(caminho)
+
+    def falhar_escrita(*args, **kwargs):
+        raise FalhaEscritaPersistencia("Não foi possível salvar a alteração.")
+
+    monkeypatch.setattr("app.salvar_estado", falhar_escrita)
+
+    resposta = client.post(
+        "/listas",
+        data={"nome": "Farmácia"},
+        follow_redirects=True,
+    )
+    texto = resposta.get_data(as_text=True)
+    assert "não foi possível salvar" in texto.lower()
+    assert "Lista criada." not in texto
+    assert carregar_estado(caminho) == estado_anterior
+
+
+def test_falha_de_leitura_exibe_mensagem_explicitamente(client):
+    caminho = client.application.config["LISTAS_JSON"]
+    with open(caminho, "w", encoding="utf-8") as arquivo:
+        arquivo.write("{json inválido")
+
+    resposta = client.get("/", follow_redirects=True)
+    texto = resposta.get_data(as_text=True)
+    assert "não foi possível ler" in texto.lower()
+    assert "Nenhuma lista ativa" not in texto

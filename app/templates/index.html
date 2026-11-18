@@ -4,13 +4,35 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Listas de compras</title>
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, sans-serif; background: #f7f7f5; color: #202124; }
+      main { width: min(100%, 760px); margin: 0 auto; padding: 16px; }
+      section { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 12px; margin: 16px 0; }
+      form { display: grid; gap: 8px; margin: 8px 0; }
+      input, select, button { min-height: 44px; font: inherit; }
+      input, select { width: 100%; padding: 8px; }
+      button { border: 1px solid #555; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+      li { border-bottom: 1px solid #eee; padding: 12px 0; }
+      ul { list-style: none; padding: 0; }
+      .flash { padding: 12px; border-radius: 8px; margin: 8px 0; }
+      .sucesso { background: #e7f6ed; border: 1px solid #2d7a4d; }
+      .erro { background: #fdeceb; border: 1px solid #b42318; }
+      .empty { background: #eef4ff; border: 1px dashed #5875a5; padding: 16px; border-radius: 8px; }
+      @media (min-width: 700px) {
+        form { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
+        form button { width: fit-content; }
+      }
+    </style>
   </head>
   <body>
-    {% for mensagem in get_flashed_messages() %}
-      <p role="alert">{{ mensagem }}</p>
+    {% for categoria, mensagem in get_flashed_messages(with_categories=true) %}
+      <p class="flash {{ categoria }}" role="{{ 'status' if categoria == 'sucesso' else 'alert' }}">{{ mensagem }}</p>
     {% endfor %}
 
     <main>
+      <section id="ativas">
       <h1>Listas ativas</h1>
 
       <form action="{{ url_for('criar') }}" method="post">
@@ -19,7 +41,9 @@
         <button type="submit">Criar lista</button>
       </form>
 
-      {% if listas %}
+      {% if erro_leitura %}
+        <p class="empty">A leitura das listas falhou. Nenhuma alteração foi confirmada.</p>
+      {% elif listas %}
         <ul>
           {% for lista in listas %}
             <li>
@@ -125,10 +149,13 @@
             </li>
           {% endfor %}
         </ul>
-      {% else %}
+      {% elif not erro_leitura %}
         <p>Nenhuma lista ativa. Crie sua primeira lista.</p>
+        <p><a href="#nome">Criar a primeira lista</a></p>
       {% endif %}
+      </section>
 
+      <section id="historico">
       <h1>Histórico</h1>
       {% if historico %}
         <ul>
@@ -148,8 +175,9 @@
           {% endfor %}
         </ul>
       {% else %}
-        <p>Nenhum histórico.</p>
+        {% if not erro_leitura %}<p>Nenhum histórico.</p>{% endif %}
       {% endif %}
+      </section>
     </main>
   </body>
 </html>
