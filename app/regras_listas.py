@@ -18,6 +18,14 @@ class ListaNaoEncontrada(KeyError):
     pass
 
 
+class NomeItemInvalido(ValueError):
+    pass
+
+
+class ItemNaoEncontrado(KeyError):
+    pass
+
+
 def estado_inicial():
     """Retorna o estado inicial observável das listas."""
     return {
@@ -47,6 +55,28 @@ def _nome_ja_existe(estado, nome, ignorar_id=None):
     )
 
 
+def _buscar_lista_ativa(estado, lista_id):
+    for lista in estado["listas_ativas"]:
+        if lista["id"] == lista_id:
+            lista.setdefault("itens", [])
+            lista.setdefault("mostrar_itens_comprados", True)
+            return lista
+    raise ListaNaoEncontrada("Lista ativa não encontrada.")
+
+
+def _buscar_item(lista, item_id):
+    for item in lista["itens"]:
+        if item["id"] == item_id:
+            return item
+    raise ItemNaoEncontrado("Item não encontrado.")
+
+
+def validar_nome_item(nome):
+    if not isinstance(nome, str) or not nome.strip():
+        raise NomeItemInvalido("Nome do item é obrigatório.")
+    return " ".join(nome.split())
+
+
 def listar_listas_ativas(estado):
     return sorted(
         estado["listas_ativas"],
@@ -64,6 +94,8 @@ def criar_lista(estado, nome, criada_em=None):
         "id": str(uuid.uuid4()),
         "nome": nome_limpo,
         "criada_em": criada_em or datetime.now(timezone.utc).isoformat(),
+        "itens": [],
+        "mostrar_itens_comprados": True,
     }
     estado.setdefault("listas_ativas", []).append(lista)
     return lista
@@ -92,6 +124,59 @@ def excluir_lista(estado, lista_id):
     raise ListaNaoEncontrada("Lista ativa não encontrada.")
 
 
+def adicionar_item(estado, lista_id, nome):
+    lista = _buscar_lista_ativa(estado, lista_id)
+    nome_limpo = validar_nome_item(nome)
+    item = {
+        "id": str(uuid.uuid4()),
+        "nome": nome_limpo,
+        "comprado": False,
+    }
+    lista["itens"].append(item)
+    return item
+
+
+def editar_item(estado, lista_id, item_id, nome):
+    lista = _buscar_lista_ativa(estado, lista_id)
+    item = _buscar_item(lista, item_id)
+    item["nome"] = validar_nome_item(nome)
+    return item
+
+
+def marcar_item_comprado(estado, lista_id, item_id):
+    lista = _buscar_lista_ativa(estado, lista_id)
+    item = _buscar_item(lista, item_id)
+    item["comprado"] = True
+    return item
+
+
+def desmarcar_item_comprado(estado, lista_id, item_id):
+    lista = _buscar_lista_ativa(estado, lista_id)
+    item = _buscar_item(lista, item_id)
+    item["comprado"] = False
+    return item
+
+
+def ocultar_itens_comprados(estado, lista_id):
+    lista = _buscar_lista_ativa(estado, lista_id)
+    lista["mostrar_itens_comprados"] = False
+    return lista
+
+
+def mostrar_itens_comprados(estado, lista_id):
+    lista = _buscar_lista_ativa(estado, lista_id)
+    lista["mostrar_itens_comprados"] = True
+    return lista
+
+
+def remover_item(estado, lista_id, item_id):
+    lista = _buscar_lista_ativa(estado, lista_id)
+    for indice, item in enumerate(lista["itens"]):
+        if item["id"] == item_id:
+            return lista["itens"].pop(indice)
+    raise ItemNaoEncontrado("Item não encontrado.")
+
+
 def carregar_estado(caminho):
     caminho = Path(caminho)
     if not caminho.exists():
@@ -100,6 +185,9 @@ def carregar_estado(caminho):
         estado = json.load(arquivo)
     estado.setdefault("listas_ativas", [])
     estado.setdefault("historico", [])
+    for lista in estado["listas_ativas"]:
+        lista.setdefault("itens", [])
+        lista.setdefault("mostrar_itens_comprados", True)
     return estado
 
 
@@ -131,6 +219,27 @@ class GerenciadorListas:
 
     def excluir(self, lista_id):
         return excluir_lista(self.estado, lista_id)
+
+    def adicionar_item(self, lista_id, nome):
+        return adicionar_item(self.estado, lista_id, nome)
+
+    def editar_item(self, lista_id, item_id, nome):
+        return editar_item(self.estado, lista_id, item_id, nome)
+
+    def marcar_comprado(self, lista_id, item_id):
+        return marcar_item_comprado(self.estado, lista_id, item_id)
+
+    def desmarcar_comprado(self, lista_id, item_id):
+        return desmarcar_item_comprado(self.estado, lista_id, item_id)
+
+    def ocultar_comprados(self, lista_id):
+        return ocultar_itens_comprados(self.estado, lista_id)
+
+    def mostrar_comprados(self, lista_id):
+        return mostrar_itens_comprados(self.estado, lista_id)
+
+    def remover_item(self, lista_id, item_id):
+        return remover_item(self.estado, lista_id, item_id)
 
 
 # Nomes de conveniência para a API pública do domínio.

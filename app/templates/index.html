@@ -29,6 +29,52 @@
                 <input id="nome-{{ lista.id }}" name="nome" type="text" value="{{ lista.nome }}" required>
                 <button type="submit">Renomear</button>
               </form>
+              <form action="{{ url_for('adicionar', lista_id=lista.id) }}" method="post">
+                <label for="item-{{ lista.id }}">Nome do item</label>
+                <input id="item-{{ lista.id }}" name="nome" type="text" required>
+                <button type="submit">Adicionar item</button>
+              </form>
+              {% if lista.mostrar_itens_comprados %}
+                <form action="{{ url_for('ocultar_comprados', lista_id=lista.id) }}" method="post">
+                  <button type="submit">Ocultar itens comprados</button>
+                </form>
+              {% else %}
+                <form action="{{ url_for('mostrar_comprados', lista_id=lista.id) }}" method="post">
+                  <button type="submit">Mostrar itens comprados</button>
+                </form>
+              {% endif %}
+              <ul>
+                {% for item in lista.itens %}
+                  {% if lista.mostrar_itens_comprados or not item.comprado %}
+                    <li class="{{ 'comprado' if item.comprado else 'pendente' }}">
+                      {% if item.comprado %}
+                        <del>{{ item.nome }}</del>
+                      {% else %}
+                        <span>{{ item.nome }}</span>
+                      {% endif %}
+                      <form action="{{ url_for('editar_item_interface', lista_id=lista.id, item_id=item.id) }}" method="post">
+                        <label for="item-nome-{{ item.id }}">Editar item</label>
+                        <input id="item-nome-{{ item.id }}" name="nome" type="text" value="{{ item.nome }}" required>
+                        <button type="submit">Editar</button>
+                      </form>
+                      {% if item.comprado %}
+                        <form action="{{ url_for('desmarcar_comprado', lista_id=lista.id, item_id=item.id) }}" method="post">
+                          <button type="submit">Desmarcar comprado</button>
+                        </form>
+                      {% else %}
+                        <form action="{{ url_for('marcar_comprado', lista_id=lista.id, item_id=item.id) }}" method="post">
+                          <button type="submit">Marcar comprado</button>
+                        </form>
+                      {% endif %}
+                      <form action="{{ url_for('remover', lista_id=lista.id, item_id=item.id) }}" method="post"
+                            onsubmit="return confirm('Remover este item?');">
+                        <input type="hidden" name="confirmar" value="sim">
+                        <button type="submit">Remover item</button>
+                      </form>
+                    </li>
+                  {% endif %}
+                {% endfor %}
+              </ul>
               <form action="{{ url_for('excluir', lista_id=lista.id) }}" method="post"
                     onsubmit="return confirm('Excluir esta lista ativa?');">
                 <input type="hidden" name="confirmar" value="sim">
